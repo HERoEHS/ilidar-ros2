@@ -33,6 +33,9 @@ ilidar_lite_core:
     publish_amplitude: true
     publish_intensity: true
     publish_confidence: true
+    publish_depth_color: true
+    publish_intensity_color: true
+    publish_amplitude_color: false
     publish_camera_info: true
     publish_pointcloud: true
     publish_pointcloud_amplitude: true

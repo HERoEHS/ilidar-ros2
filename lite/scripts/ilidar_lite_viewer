@@ -18,10 +18,8 @@ import yaml
 
 SENSOR_TOPIC_SUFFIXES = {
     "LITE Points": "points",
-    "Depth Image": "depth/image_raw",
-    "Amplitude Image": "amplitude/image_raw",
-    "Intensity Image": "intensity/image_raw",
-    "Confidence Image": "confidence/image_raw",
+    "Depth Color Image": "depth/image_color",
+    "Intensity Color Image": "intensity/image_color",
 }
 INFO_TOPIC_PATTERN = re.compile(r"^/ilidar_lite_(\d+)/info$")
 DISCOVERY_SETTLE_SEC = 1.0

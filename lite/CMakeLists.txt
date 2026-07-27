@@ -14,6 +14,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(Threads REQUIRED)
 
 # Keep the copied SDK translation unit and ROS wrapper in one executable. SDK
@@ -45,6 +46,7 @@ ament_target_dependencies(ilidar_lite_core
 
 target_link_libraries(ilidar_lite_core
   Threads::Threads
+  ${OpenCV_LIBS}
 )
 
 # Launch, parameter, and RViz files are resolved from the installed package

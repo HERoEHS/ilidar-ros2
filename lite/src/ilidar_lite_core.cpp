@@ -40,6 +40,8 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 
+#include <opencv2/opencv.hpp>
+
 #include "ilidar_lite.hpp"
 
 namespace {
@@ -169,6 +171,9 @@ struct DeviceSettings {
     bool publish_amplitude = true;
     bool publish_intensity = true;
     bool publish_confidence = true;
+    bool publish_depth_color = true;
+    bool publish_intensity_color = true;
+    bool publish_amplitude_color = true;
     bool publish_camera_info = true;
     bool publish_pointcloud = true;
     bool publish_pointcloud_amplitude = true;
@@ -228,6 +233,9 @@ struct DeviceContext {
     sensor_msgs::msg::Image amplitude_msg;
     sensor_msgs::msg::Image intensity_msg;
     sensor_msgs::msg::Image confidence_msg;
+    sensor_msgs::msg::Image depth_color_msg;
+    sensor_msgs::msg::Image intensity_color_msg;
+    sensor_msgs::msg::Image amplitude_color_msg;
     sensor_msgs::msg::CameraInfo camera_info_msg;
     bool camera_info_initialized = false;
     sensor_msgs::msg::PointCloud2 points_msg;
@@ -237,6 +245,9 @@ struct DeviceContext {
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr amplitude_pub;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr intensity_pub;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr confidence_pub;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr depth_color_pub;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr intensity_color_pub;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr amplitude_color_pub;
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr depth_camera_info_pub;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr points_pub;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr info_pub;
@@ -569,6 +580,9 @@ class LiteCoreNode : public rclcpp::Node {
         default_settings_.publish_amplitude = declare_immutable_parameter<bool>("publish_amplitude", true);
         default_settings_.publish_intensity = declare_immutable_parameter<bool>("publish_intensity", true);
         default_settings_.publish_confidence = declare_immutable_parameter<bool>("publish_confidence", true);
+        default_settings_.publish_depth_color = declare_immutable_parameter<bool>("publish_depth_color", true);
+        default_settings_.publish_intensity_color = declare_immutable_parameter<bool>("publish_intensity_color", true);
+        default_settings_.publish_amplitude_color = declare_immutable_parameter<bool>("publish_amplitude_color", true);
         default_settings_.publish_camera_info = declare_immutable_parameter<bool>("publish_camera_info", true);
         default_settings_.publish_pointcloud = declare_immutable_parameter<bool>("publish_pointcloud", true);
         default_settings_.publish_pointcloud_amplitude =
@@ -611,6 +625,10 @@ class LiteCoreNode : public rclcpp::Node {
             context.depth_pub = create_publisher<sensor_msgs::msg::Image>(
                 topic_name(context.topic_prefix, "/depth/image_raw"), sensor_qos);
         }
+        if (context.settings.publish_depth_color) {
+            context.depth_color_pub = create_publisher<sensor_msgs::msg::Image>(
+                topic_name(context.topic_prefix, "/depth/image_color"), sensor_qos);
+        }
         if (context.settings.publish_camera_info) {
             context.depth_camera_info_pub = create_publisher<sensor_msgs::msg::CameraInfo>(
                 topic_name(context.topic_prefix, "/depth/camera_info"), sensor_qos);
@@ -619,9 +637,17 @@ class LiteCoreNode : public rclcpp::Node {
             context.amplitude_pub = create_publisher<sensor_msgs::msg::Image>(
                 topic_name(context.topic_prefix, "/amplitude/image_raw"), sensor_qos);
         }
+        if (context.settings.publish_amplitude_color) {
+            context.amplitude_color_pub = create_publisher<sensor_msgs::msg::Image>(
+                topic_name(context.topic_prefix, "/amplitude/image_color"), sensor_qos);
+        }
         if (context.settings.publish_intensity) {
             context.intensity_pub = create_publisher<sensor_msgs::msg::Image>(
                 topic_name(context.topic_prefix, "/intensity/image_raw"), sensor_qos);
+        }
+        if (context.settings.publish_intensity_color) {
+            context.intensity_color_pub = create_publisher<sensor_msgs::msg::Image>(
+                topic_name(context.topic_prefix, "/intensity/image_color"), sensor_qos);
         }
         if (context.settings.publish_confidence) {
             context.confidence_pub = create_publisher<sensor_msgs::msg::Image>(
@@ -667,6 +693,12 @@ class LiteCoreNode : public rclcpp::Node {
             context, "publish_intensity", default_settings_.publish_intensity);
         settings.publish_confidence = device_parameter(
             context, "publish_confidence", default_settings_.publish_confidence);
+        settings.publish_depth_color = device_parameter(
+            context, "publish_depth_color", default_settings_.publish_depth_color);
+        settings.publish_intensity_color = device_parameter(
+            context, "publish_intensity_color", default_settings_.publish_intensity_color);
+        settings.publish_amplitude_color = device_parameter(
+            context, "publish_amplitude_color", default_settings_.publish_amplitude_color);
         settings.publish_camera_info = device_parameter(
             context, "publish_camera_info", default_settings_.publish_camera_info);
         settings.publish_pointcloud = device_parameter(
@@ -874,9 +906,12 @@ class LiteCoreNode : public rclcpp::Node {
     // Called only by the subscription timer, never by an SDK callback.
     FrameRequest sample_frame_request(const DeviceContext &context) const {
         FrameRequest request;
-        request.depth = has_subscribers(context.depth_pub);
-        request.amplitude = has_subscribers(context.amplitude_pub);
-        request.intensity = has_subscribers(context.intensity_pub);
+        request.depth = has_subscribers(context.depth_pub) ||
+                        has_subscribers(context.depth_color_pub);
+        request.amplitude = has_subscribers(context.amplitude_pub) ||
+                           has_subscribers(context.amplitude_color_pub);
+        request.intensity = has_subscribers(context.intensity_pub) ||
+                            has_subscribers(context.intensity_color_pub);
         request.confidence = has_subscribers(context.confidence_pub);
         request.camera_info = has_subscribers(context.depth_camera_info_pub);
         request.pointcloud = has_subscribers(context.points_pub);
@@ -1402,6 +1437,19 @@ class LiteCoreNode : public rclcpp::Node {
                               "mono16", sizeof(uint16_t));
         if (restore_depth_mm(context, frame, context.depth_msg.data)) {
             publish_image(context.depth_pub, context.depth_msg, frame.stamp);
+
+            if (context.settings.publish_depth_color && context.depth_color_pub) {
+                cv::Mat mono16(iTFS::lite_max_row, iTFS::lite_max_col, CV_16UC1,
+                               context.depth_msg.data.data());
+                cv::Mat mono8;
+                mono16.convertTo(mono8, CV_8UC1, 255.0 / 7500.0);
+                cv::Mat color;
+                cv::applyColorMap(mono8, color, cv::COLORMAP_TURBO);
+                prepare_image_message(context.depth_color_msg,
+                                      context.settings.optical_frame_id, "bgr8", 3);
+                context.depth_color_msg.data.assign(color.data, color.data + color.total() * color.elemSize());
+                publish_image(context.depth_color_pub, context.depth_color_msg, frame.stamp);
+            }
         }
     }
 
@@ -1419,6 +1467,19 @@ class LiteCoreNode : public rclcpp::Node {
             context, frame, context.amplitude_msg.data);
         if (valid && publish_requested) {
             publish_image(context.amplitude_pub, context.amplitude_msg, frame.stamp);
+
+            if (context.settings.publish_amplitude_color && context.amplitude_color_pub) {
+                cv::Mat mono16(iTFS::lite_max_row, iTFS::lite_max_col, CV_16UC1,
+                               context.amplitude_msg.data.data());
+                cv::Mat mono8;
+                mono16.convertTo(mono8, CV_8UC1, 255.0 / 2048.0);
+                cv::Mat color;
+                cv::applyColorMap(mono8, color, cv::COLORMAP_TURBO);
+                prepare_image_message(context.amplitude_color_msg,
+                                      context.settings.optical_frame_id, "bgr8", 3);
+                context.amplitude_color_msg.data.assign(color.data, color.data + color.total() * color.elemSize());
+                publish_image(context.amplitude_color_pub, context.amplitude_color_msg, frame.stamp);
+            }
         }
         return valid;
     }
@@ -1434,6 +1495,19 @@ class LiteCoreNode : public rclcpp::Node {
                               "mono16", sizeof(uint16_t));
         if (restore_intensity_raw(context, frame, context.intensity_msg.data)) {
             publish_image(context.intensity_pub, context.intensity_msg, frame.stamp);
+
+            if (context.settings.publish_intensity_color && context.intensity_color_pub) {
+                cv::Mat mono16(iTFS::lite_max_row, iTFS::lite_max_col, CV_16UC1,
+                               context.intensity_msg.data.data());
+                cv::Mat mono8;
+                mono16.convertTo(mono8, CV_8UC1, 255.0 / 2048.0);
+                cv::Mat color;
+                cv::applyColorMap(mono8, color, cv::COLORMAP_TURBO);
+                prepare_image_message(context.intensity_color_msg,
+                                      context.settings.optical_frame_id, "bgr8", 3);
+                context.intensity_color_msg.data.assign(color.data, color.data + color.total() * color.elemSize());
+                publish_image(context.intensity_color_pub, context.intensity_color_msg, frame.stamp);
+            }
         }
     }
 

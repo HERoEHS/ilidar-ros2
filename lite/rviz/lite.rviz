@@ -37,46 +37,24 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
-      Name: Depth Image
+      Name: Depth Color Image
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: depth/image_raw
+        Value: depth/image_color
       Transport Hint: raw
       Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
-      Name: Amplitude Image
+      Name: Intensity Color Image
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: amplitude/image_raw
-      Transport Hint: raw
-      Value: true
-    - Class: rviz_default_plugins/Image
-      Enabled: true
-      Name: Intensity Image
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: intensity/image_raw
-      Transport Hint: raw
-      Value: true
-    - Class: rviz_default_plugins/Image
-      Enabled: true
-      Name: Confidence Image
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: confidence/image_raw
+        Value: intensity/image_color
       Transport Hint: raw
       Value: true
   Enabled: true
