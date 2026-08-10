@@ -30,8 +30,9 @@ Visualization Manager:
         Value: points
       Style: Points
       Size (Pixels): 3
-      Color Transformer: FlatColor
-      Color: 255; 255; 255
+      Color Transformer: AxisColor
+      Axis: Z
+      Use Fixed Frame: true
       Position Transformer: XYZ
       Queue Size: 5
       Value: true

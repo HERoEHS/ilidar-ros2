@@ -677,6 +677,8 @@ class LiteCoreNode : public rclcpp::Node {
         DeviceSettings settings = default_settings_;
         const std::string identity = "ilidar_lite_" + std::to_string(context.sensor_sn);
         context.parameter_prefix = "devices." + identity + ".";
+        context.topic_prefix = device_parameter<std::string>(
+            context, "topic_prefix", "/ilidar_lite_" + std::to_string(context.sensor_sn));
 
         settings.parent_frame_id = device_parameter(
             context, "parent_frame_id", default_settings_.parent_frame_id);

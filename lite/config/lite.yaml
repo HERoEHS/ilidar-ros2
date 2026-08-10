@@ -48,13 +48,24 @@ ilidar_lite_core:
     # Optional per-sensor overrides. Missing entries inherit the common values
     # above; link_frame_id and frame_id retain their SN-derived defaults. All
     # parameters are fixed after startup; edit this file and restart the node.
-    # devices:
-    #   ilidar_lite_87:
-    #     parent_frame_id: base_link
-    #     mount_translation_x: 0.25
-    #     mount_translation_y: 0.0
-    #     mount_translation_z: 0.8
-    #     mount_rotation_yaw: 0.0
-    #     publish_pointcloud: true
-    #     link_frame_id: ilidar_lite_87_link
-    #     frame_id: ilidar_lite_87_optical_frame
+    # Units: meters. SN 99 -> left, SN 97 -> right.
+    devices:
+      ilidar_lite_99:
+        topic_prefix: /ilidar_lite_left
+        link_frame_id: ilidar_lite_left_link
+        frame_id: ilidar_lite_left_optical_frame
+        mount_translation_x: -0.40
+        mount_translation_y: 0.22
+        mount_translation_z: 0.1
+        mount_rotation_roll: 3.141592653589793
+        # mount_rotation_pitch: -1.5707963267948966
+        mount_rotation_yaw: 0.959931
+        
+      ilidar_lite_97:
+        topic_prefix: /ilidar_lite_right
+        link_frame_id: ilidar_lite_right_link
+        frame_id: ilidar_lite_right_optical_frame
+        mount_translation_x: -0.40
+        mount_translation_y: -0.22
+        mount_translation_z: 0.1
+        mount_rotation_yaw: -0.959931

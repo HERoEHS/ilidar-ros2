@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Discover optional LITE serial numbers and supervise one RViz process."""
+"""Discover optional LITE sensor names and supervise one RViz process."""
 
 import copy
 import os
@@ -21,33 +21,34 @@ SENSOR_TOPIC_SUFFIXES = {
     "Depth Color Image": "depth/image_color",
     "Intensity Color Image": "intensity/image_color",
 }
-INFO_TOPIC_PATTERN = re.compile(r"^/ilidar_lite_(\d+)/info$")
+INFO_TOPIC_PATTERN = re.compile(r"^/ilidar_lite_(\w+)/info$")
 DISCOVERY_SETTLE_SEC = 1.0
 PROCESS_STOP_TIMEOUT_SEC = 5.0
 
 
-def parse_sensor_sns(text):
-    """Parse a delimited decimal SN list while preserving input order."""
+def parse_sensor_names(text):
+    """Parse a delimited sensor name list while preserving input order.
+
+    Names are the identifier appended to /ilidar_lite_<name>. They may be
+    numeric serial numbers (e.g. "99") or aliases (e.g. "left", "right").
+    """
     tokens = [token for token in re.split(r"[\s,;]+", text.strip()) if token]
     if not tokens:
-        raise ValueError("sensor_sns must contain at least one sensor serial number")
+        raise ValueError("sensor_sns must contain at least one sensor name")
 
-    sensor_sns = []
+    sensor_names = []
     seen = set()
     for token in tokens:
-        if not token.isdigit():
-            raise ValueError("invalid sensor serial number: {!r}".format(token))
-        sensor_sn = int(token)
-        if sensor_sn < 0 or sensor_sn >= 0xFFFF:
-            raise ValueError("sensor serial number out of range: {}".format(sensor_sn))
-        if sensor_sn not in seen:
-            seen.add(sensor_sn)
-            sensor_sns.append(sensor_sn)
-    return sensor_sns
+        if not re.match(r"^\w+$", token):
+            raise ValueError("invalid sensor name: {!r}".format(token))
+        if token not in seen:
+            seen.add(token)
+            sensor_names.append(token)
+    return sensor_names
 
 
-def discover_sensor_sns(node):
-    """Collect every advertised SN, then return after the graph settles."""
+def discover_sensor_names(node):
+    """Collect every advertised sensor name, then return after the graph settles."""
     last_change_at = None
     discovered = set()
     node.get_logger().info("sensor_sns was omitted; discovering LITE sensors")
@@ -58,14 +59,14 @@ def discover_sensor_sns(node):
         for topic_name, _ in node.get_topic_names_and_types():
             match = INFO_TOPIC_PATTERN.match(topic_name)
             if match:
-                current.add(int(match.group(1)))
+                current.add(match.group(1))
 
         if current != discovered:
             discovered = current
             last_change_at = time.monotonic()
             node.get_logger().info(
-                "discovered sensor SNs: {}".format(
-                    ", ".join(str(sensor_sn) for sensor_sn in sorted(discovered))))
+                "discovered sensor names: {}".format(
+                    ", ".join(sorted(discovered))))
 
         now = time.monotonic()
         if discovered and now - last_change_at >= DISCOVERY_SETTLE_SEC:
@@ -73,8 +74,8 @@ def discover_sensor_sns(node):
     raise RuntimeError("ROS shutdown while discovering LITE sensors")
 
 
-def build_rviz_config(template_path, sensor_sns, fixed_frame):
-    """Clone the sensor display templates into one group per SN."""
+def build_rviz_config(template_path, sensor_names, fixed_frame):
+    """Clone the sensor display templates into one group per sensor name."""
     with open(template_path, "r", encoding="utf-8") as stream:
         config = yaml.safe_load(stream)
 
@@ -89,7 +90,7 @@ def build_rviz_config(template_path, sensor_sns, fixed_frame):
     if missing:
         raise ValueError("RViz template is missing displays: {}".format(sorted(missing)))
 
-    # Grid and TF remain global; sensor displays are cloned into one group per SN.
+    # Grid and TF remain global; sensor displays are cloned into one group per name.
     manager["Displays"] = [
         display
         for display in source_displays
@@ -98,8 +99,8 @@ def build_rviz_config(template_path, sensor_sns, fixed_frame):
     manager["Global Options"]["Fixed Frame"] = fixed_frame
     manager["Views"]["Current"]["Target Frame"] = fixed_frame
 
-    for sensor_sn in sensor_sns:
-        topic_prefix = "/ilidar_lite_{}".format(sensor_sn)
+    for sensor_name in sensor_names:
+        topic_prefix = "/ilidar_lite_{}".format(sensor_name)
         displays = []
         for name, suffix in SENSOR_TOPIC_SUFFIXES.items():
             display = copy.deepcopy(sensor_templates[name])
@@ -111,7 +112,7 @@ def build_rviz_config(template_path, sensor_sns, fixed_frame):
                 "Class": "rviz_common/Group",
                 "Displays": displays,
                 "Enabled": True,
-                "Name": "ilidar_lite_{}".format(sensor_sn),
+                "Name": "ilidar_lite_{}".format(sensor_name),
             }
         )
     return config
@@ -144,14 +145,14 @@ def main():
         node.declare_parameter("sensor_sns", "")
         node.declare_parameter("fixed_frame", "base_link")
         node.declare_parameter("rviz_template", "")
-        sensor_sns_text = node.get_parameter("sensor_sns").value.strip()
-        sensor_sns = (
-            parse_sensor_sns(sensor_sns_text)
-            if sensor_sns_text else discover_sensor_sns(node)
+        sensor_names_text = node.get_parameter("sensor_sns").value.strip()
+        sensor_names = (
+            parse_sensor_names(sensor_names_text)
+            if sensor_names_text else discover_sensor_names(node)
         )
         fixed_frame = node.get_parameter("fixed_frame").value
         rviz_template = node.get_parameter("rviz_template").value
-        config = build_rviz_config(rviz_template, sensor_sns, fixed_frame)
+        config = build_rviz_config(rviz_template, sensor_names, fixed_frame)
 
         descriptor, temporary_path = tempfile.mkstemp(
             prefix="ilidar_lite_", suffix=".rviz"
