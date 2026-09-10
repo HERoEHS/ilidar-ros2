@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(ilidar_itfs_ros2 VERSION 2.0.1)
+project(ilidar_itfs_ros2 VERSION 2.0.2)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
