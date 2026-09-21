@@ -36,8 +36,8 @@ source install/setup.bash
 ros2 launch ilidar_lite_ros2 viewer.launch.py
 ```
 
-The viewer discovers `/ilidar_lite_<SN>/info` topics and creates one RViz2
-group per detected serial number. Closing RViz2 also stops the included driver.
+The viewer discovers `/ilidar_lite_<ID>/info` topics and creates one RViz2
+group per detected sensor. Closing RViz2 also stops the included driver.
 
 ## Dependencies
 
@@ -62,7 +62,8 @@ An explicit `sensor_sns` list configures RViz2 only; it does not filter devices
 accepted by the driver. Use `fixed_frame:=<frame>` when the sensors use a
 parent other than `base_link`.
 
-Replace `87` with the detected decimal serial number:
+Replace `87` with the detected sensor ID, the third octet of the sensor IP
+address:
 
 ```bash
 ros2 node list
@@ -87,7 +88,10 @@ produces no corresponding messages.
 
 ## Topics, QoS, and Data Contract
 
-Each device publishes below `/ilidar_lite_<SN>`.
+Each device publishes below `/ilidar_lite_<ID>`, where `<ID>` is the third
+octet of the sensor IPv4 address. A sensor at `10.0.97.2` publishes below
+`/ilidar_lite_97`. Identity therefore survives a sensor replacement that
+reuses the same address, and each sensor needs its own third octet.
 
 |Topic|Type|QoS|Description|
 |:---|:---|:---|:---|
@@ -145,8 +149,8 @@ precision already discarded by a sensor-side 8-bit mode.
 
 ```text
 base_link
-  -> ilidar_lite_<SN>_link
-      -> ilidar_lite_<SN>_optical_frame
+  -> ilidar_lite_<ID>_link
+      -> ilidar_lite_<ID>_optical_frame
 ```
 
 Images and CameraInfo use the optical frame; PointCloud2 uses the link frame.
@@ -166,8 +170,8 @@ required.
 |`listening_ip`|empty|SDK receive-interface override|
 |`listening_port`|`7256`|UDP receive port|
 |`parent_frame_id`|`base_link`|Mount parent frame|
-|`link_frame_id`|SN-derived|Point-cloud frame|
-|`frame_id`|SN-derived|Image optical frame|
+|`link_frame_id`|IP-derived|Point-cloud frame|
+|`frame_id`|IP-derived|Image optical frame|
 |`publish_tf`|`true`|Publish static transforms|
 |`publish_depth`|`true`|Publish depth|
 |`publish_amplitude`|`true`|Publish amplitude when available|
@@ -186,6 +190,10 @@ Pose parameters use `mount_translation_{x,y,z}`,
 `optical_rotation_{roll,pitch,yaw}`. Parameters are read-only during a run.
 
 ## Configuration Examples
+
+Per-sensor overrides live under `devices.ilidar_lite_<ID>`, where `<ID>` is the
+third octet of the sensor IPv4 address. A sensor at `10.0.87.2` reads the block
+named `ilidar_lite_87`.
 
 Single sensor with a measured mount pose:
 
@@ -239,7 +247,7 @@ power, packet error counters, conversion warnings, frame IDs, and
 
 - `OK`: no active warning and native ROS input modes are used.
 - `WARN`: sensor/frame warning, missing rows, or non-native input conversion.
-- `ERROR`: sensor identity or `data_output` changed after initialization.
+- `ERROR`: sensor subnet ID or `data_output` changed after initialization.
 
 Each sensor has one worker and reusable latest-frame buffers. New input
 replaces pending work when conversion cannot keep up, increasing

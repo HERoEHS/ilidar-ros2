@@ -5,8 +5,10 @@ ilidar_lite_core:
     listening_port: 7256
 
     # Common defaults for every discovered sensor. Topics and child frames are
-    # generated from sensor_sn: /ilidar_lite_<SN>, ilidar_lite_<SN>_link, and
-    # ilidar_lite_<SN>_optical_frame.
+    # generated from the third octet of the sensor IP address, so a sensor at
+    # 10.0.97.2 is identified as 97: /ilidar_lite_97, ilidar_lite_97_link, and
+    # ilidar_lite_97_optical_frame. Replacing a sensor keeps the same names as
+    # long as the replacement reuses the address.
     parent_frame_id: base_link
     publish_tf: true
 
@@ -45,10 +47,11 @@ ilidar_lite_core:
     sensor_qos_depth: 5
     diagnostics_qos_depth: 10
 
-    # Optional per-sensor overrides. Missing entries inherit the common values
-    # above; link_frame_id and frame_id retain their SN-derived defaults. All
-    # parameters are fixed after startup; edit this file and restart the node.
-    # Units: meters. SN 99 -> left, SN 97 -> right.
+    # Optional per-sensor overrides keyed by ilidar_lite_<third IP octet>.
+    # Missing entries inherit the common values above; link_frame_id and
+    # frame_id retain their address-derived defaults. All parameters are fixed
+    # after startup; edit this file and restart the node.
+    # Units: meters. 10.0.99.x -> left, 10.0.97.x -> right.
     devices:
       ilidar_lite_99:
         topic_prefix: /ilidar_lite_left

@@ -197,14 +197,20 @@ struct DeviceSettings {
 // All high-rate state is isolated per sensor. Contexts are allocated lazily
 // after a valid serial number arrives, so disconnected SDK slots cost nothing.
 struct DeviceContext {
-    explicit DeviceContext(int index, uint16_t serial)
-        : device_idx(index), sensor_sn(serial),
-          topic_prefix("/ilidar_lite_" + std::to_string(serial)),
+    explicit DeviceContext(int index, uint16_t serial, uint8_t subnet, const uint8_t ip[4])
+        : device_idx(index), sensor_sn(serial), subnet_id(subnet),
+          sensor_ip{ip[0], ip[1], ip[2], ip[3]},
+          topic_prefix("/ilidar_lite_" + std::to_string(static_cast<unsigned int>(subnet))),
           pending_frame(std::make_unique<LiteFrameSnapshot>()),
           working_frame(std::make_unique<LiteFrameSnapshot>()) {}
 
     int device_idx;
     uint16_t sensor_sn;
+    // Third IPv4 octet of the sensor address. Topics, TF frames, and the
+    // per-device parameter block are all keyed by this value so that a sensor
+    // replacement keeps its identity as long as the address is reused.
+    uint8_t subnet_id;
+    std::array<uint8_t, 4> sensor_ip;
     std::string topic_prefix;
     std::string parameter_prefix;
     DeviceSettings settings;
@@ -220,6 +226,7 @@ struct DeviceContext {
     bool frame_pending = false;
     bool worker_exit = false;
     bool calibration_ready = false;
+    bool sn_change_logged = false;
     std::atomic<uint64_t> ros_frame_overwrite_count{0};
     std::atomic<bool> faulted{false};
     std::atomic<uint8_t> frame_request_mask{0};
@@ -675,10 +682,11 @@ class LiteCoreNode : public rclcpp::Node {
 
     DeviceSettings load_device_settings(DeviceContext &context) {
         DeviceSettings settings = default_settings_;
-        const std::string identity = "ilidar_lite_" + std::to_string(context.sensor_sn);
+        const std::string identity =
+            "ilidar_lite_" + std::to_string(static_cast<unsigned int>(context.subnet_id));
         context.parameter_prefix = "devices." + identity + ".";
         context.topic_prefix = device_parameter<std::string>(
-            context, "topic_prefix", "/ilidar_lite_" + std::to_string(context.sensor_sn));
+            context, "topic_prefix", "/" + identity);
 
         settings.parent_frame_id = device_parameter(
             context, "parent_frame_id", default_settings_.parent_frame_id);
@@ -803,8 +811,10 @@ class LiteCoreNode : public rclcpp::Node {
                 settings.optical_frame_id == other->settings.link_frame_id ||
                 settings.optical_frame_id == other->settings.optical_frame_id;
             if (duplicate_child) {
-                throw std::invalid_argument("TF child frame IDs collide with SN#" +
-                                            std::to_string(other->sensor_sn));
+                throw std::invalid_argument(
+                    "TF child frame IDs collide with subnet " +
+                    std::to_string(static_cast<unsigned int>(other->subnet_id)) +
+                    " (SN#" + std::to_string(other->sensor_sn) + ")");
             }
         }
     }
@@ -836,17 +846,32 @@ class LiteCoreNode : public rclcpp::Node {
         if (DeviceContext *existing = context_for(device->idx)) {
             return existing;
         }
+
+        // Identity comes from the third IPv4 octet, so two sensors sharing one
+        // subnet would publish onto the same topics and TF frames.
+        const uint8_t subnet_id = device->ip[2];
         for (const auto &other : contexts_) {
-            if (other && other->sensor_sn == device->info_v3.sensor_sn) {
-                RCLCPP_ERROR(get_logger(), "Duplicate sensor SN#%u on D#%d and D#%d.",
-                             device->info_v3.sensor_sn, other->device_idx, device->idx);
+            if (other && other->subnet_id == subnet_id) {
+                RCLCPP_ERROR(get_logger(),
+                             "Duplicate sensor subnet %u on D#%d (%u.%u.%u.%u) and D#%d "
+                             "(%u.%u.%u.%u). Give each sensor its own third IPv4 octet.",
+                             static_cast<unsigned int>(subnet_id), other->device_idx,
+                             static_cast<unsigned int>(other->sensor_ip[0]),
+                             static_cast<unsigned int>(other->sensor_ip[1]),
+                             static_cast<unsigned int>(other->sensor_ip[2]),
+                             static_cast<unsigned int>(other->sensor_ip[3]), device->idx,
+                             static_cast<unsigned int>(device->ip[0]),
+                             static_cast<unsigned int>(device->ip[1]),
+                             static_cast<unsigned int>(device->ip[2]),
+                             static_cast<unsigned int>(device->ip[3]));
                 context_init_failed_[device->idx].store(true, std::memory_order_relaxed);
                 return nullptr;
             }
         }
 
         try {
-            auto owned = std::make_unique<DeviceContext>(device->idx, device->info_v3.sensor_sn);
+            auto owned = std::make_unique<DeviceContext>(device->idx, device->info_v3.sensor_sn,
+                                                         subnet_id, device->ip);
             owned->settings = load_device_settings(*owned);
             validate_device_frames(*owned);
             owned->output_layout = decode_output_layout(device->info_v3.data_output);
@@ -859,13 +884,19 @@ class LiteCoreNode : public rclcpp::Node {
             context->worker_thread = std::thread(&LiteCoreNode::frame_worker, this, context);
             contexts_[device->idx] = std::move(owned);
             context_by_idx_[device->idx].store(context, std::memory_order_release);
-            RCLCPP_INFO(get_logger(), "D#%d SN#%u initialized at %s.",
-                        device->idx, context->sensor_sn, context->topic_prefix.c_str());
+            RCLCPP_INFO(get_logger(), "D#%d SN#%u IP %u.%u.%u.%u initialized at %s.",
+                        device->idx, context->sensor_sn,
+                        static_cast<unsigned int>(device->ip[0]),
+                        static_cast<unsigned int>(device->ip[1]),
+                        static_cast<unsigned int>(device->ip[2]),
+                        static_cast<unsigned int>(device->ip[3]),
+                        context->topic_prefix.c_str());
             return context;
         } catch (const std::exception &exc) {
             context_init_failed_[device->idx].store(true, std::memory_order_relaxed);
-            RCLCPP_ERROR(get_logger(), "D#%d SN#%u initialization failed: %s",
-                         device->idx, device->info_v3.sensor_sn, exc.what());
+            RCLCPP_ERROR(get_logger(), "D#%d SN#%u subnet %u initialization failed: %s",
+                         device->idx, device->info_v3.sensor_sn,
+                         static_cast<unsigned int>(subnet_id), exc.what());
             return nullptr;
         }
     }
@@ -1150,7 +1181,9 @@ class LiteCoreNode : public rclcpp::Node {
             }
 
             diagnostic_msgs::msg::DiagnosticStatus status;
-            status.name = "ilidar_lite_" + std::to_string(context->sensor_sn) + "/status";
+            status.name = "ilidar_lite_" +
+                          std::to_string(static_cast<unsigned int>(context->subnet_id)) +
+                          "/status";
             status.hardware_id = std::to_string(sensor.sensor_sn);
             status.level = context_faulted ? diagnostic_msgs::msg::DiagnosticStatus::ERROR :
                            (reported_sensor_warning == 0 && !sensor_frame_warning &&
@@ -1169,6 +1202,14 @@ class LiteCoreNode : public rclcpp::Node {
                 key_value("ros_stamp_nanosec", array.header.stamp.nanosec),
                 key_value("sensor_time_us", time_us),
                 key_value("device_index", context->device_idx),
+                key_value("subnet_id", static_cast<unsigned int>(context->subnet_id)),
+                key_value("sensor_ip",
+                          std::to_string(static_cast<unsigned int>(context->sensor_ip[0])) + "." +
+                              std::to_string(static_cast<unsigned int>(context->sensor_ip[1])) +
+                              "." +
+                              std::to_string(static_cast<unsigned int>(context->sensor_ip[2])) +
+                              "." +
+                              std::to_string(static_cast<unsigned int>(context->sensor_ip[3]))),
                 key_value("capture_mode", static_cast<unsigned int>(sensor.capture_mode)),
                 key_value("capture_frame", static_cast<unsigned int>(sensor.capture_frame)),
                 key_value("sensor_frame_status", hex_string(reported_sensor_frame_status)),
@@ -1239,11 +1280,29 @@ class LiteCoreNode : public rclcpp::Node {
         }
 
         const uint16_t data_output = device->info_v3.data_output;
-        if (device->info_v3.sensor_sn != context->sensor_sn) {
-            RCLCPP_ERROR(get_logger(), "D#%d changed SN from %u to %u.", device->idx,
-                         context->sensor_sn, device->info_v3.sensor_sn);
+        if (device->ip[2] != context->subnet_id) {
+            RCLCPP_ERROR(get_logger(),
+                         "D#%d changed subnet from %u to %u. Publishing on %s is disabled "
+                         "until restart.",
+                         device->idx, static_cast<unsigned int>(context->subnet_id),
+                         static_cast<unsigned int>(device->ip[2]),
+                         context->topic_prefix.c_str());
             context->faulted.store(true, std::memory_order_relaxed);
             return;
+        }
+        // The SN no longer drives identity, so a swapped sensor on the same
+        // address keeps publishing. Report the change once; diagnostics carry
+        // the live SN from every status packet. Only the SDK read thread runs
+        // this handler, so the flag needs no synchronization, and sensor_sn
+        // stays immutable for the worker and diagnostics threads.
+        if (device->info_v3.sensor_sn != context->sensor_sn && !context->sn_change_logged) {
+            RCLCPP_WARN(get_logger(),
+                        "D#%d SN changed from %u to %u on subnet %u. Identity is address-based, "
+                        "so publishing continues on %s.",
+                        device->idx, context->sensor_sn, device->info_v3.sensor_sn,
+                        static_cast<unsigned int>(context->subnet_id),
+                        context->topic_prefix.c_str());
+            context->sn_change_logged = true;
         }
         if (data_output != context->output_layout.data_output) {
             RCLCPP_ERROR(get_logger(),
@@ -1304,9 +1363,9 @@ class LiteCoreNode : public rclcpp::Node {
                                 now_steady - context.last_output_mode_warning_log_time >=
                                     output_mode_warning_repeat_period;
         if (repeat_due) {
-            RCLCPP_WARN(get_logger(), "D#%d SN#%u non-native ROS image modes: %s",
-                        context.device_idx, context.sensor_sn,
-                        context.output_layout.warning.c_str());
+            RCLCPP_WARN(get_logger(), "D#%d subnet %u SN#%u non-native ROS image modes: %s",
+                        context.device_idx, static_cast<unsigned int>(context.subnet_id),
+                        context.sensor_sn, context.output_layout.warning.c_str());
             context.last_output_mode_warning_log_time = now_steady;
         }
     }
@@ -1692,8 +1751,9 @@ class LiteCoreNode : public rclcpp::Node {
             const double k3 = static_cast<double>(intrinsic.lens_kc[4]) * 1e-8;
             const double k4 = static_cast<double>(intrinsic.lens_kc[5]) * 1e-8;
             if (std::abs(k4) > std::numeric_limits<double>::epsilon()) {
-                RCLCPP_WARN(get_logger(), "SN#%u CameraInfo omits unsupported SDK k4 (r^8).",
-                            context.sensor_sn);
+                RCLCPP_WARN(get_logger(),
+                            "subnet %u SN#%u CameraInfo omits unsupported SDK k4 (r^8).",
+                            static_cast<unsigned int>(context.subnet_id), context.sensor_sn);
             }
             msg.header.frame_id = context.settings.optical_frame_id;
             msg.height = iTFS::lite_max_row;
