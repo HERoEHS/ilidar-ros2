@@ -54,21 +54,16 @@ ilidar_lite_core:
     # Units: meters. 10.0.99.x -> left, 10.0.97.x -> right.
     devices:
       ilidar_lite_99:
-        topic_prefix: /ilidar_lite_left
-        link_frame_id: ilidar_lite_left_link
-        frame_id: ilidar_lite_left_optical_frame
-        mount_translation_x: -0.40
-        mount_translation_y: 0.22
-        mount_translation_z: 0.1
-        mount_rotation_roll: 3.141592653589793
-        # mount_rotation_pitch: -1.5707963267948966
-        mount_rotation_yaw: 0.959931
-        
+        topic_prefix: /ilidar_lite_front
+        link_frame_id: ilidar_lite_front_link
+        frame_id: ilidar_lite_front_optical_frame
+        mount_translation_x: 0.40
+        mount_translation_z: 0.21
+
       ilidar_lite_97:
-        topic_prefix: /ilidar_lite_right
-        link_frame_id: ilidar_lite_right_link
-        frame_id: ilidar_lite_right_optical_frame
-        mount_translation_x: -0.40
-        mount_translation_y: -0.22
-        mount_translation_z: 0.1
-        mount_rotation_yaw: -0.959931
+        topic_prefix: /ilidar_lite_rear
+        link_frame_id: ilidar_lite_rear_link
+        frame_id: ilidar_lite_rear_optical_frame
+        mount_translation_x: -0.52
+        mount_translation_z: 0.21
+        mount_rotation_yaw: 3.14159
