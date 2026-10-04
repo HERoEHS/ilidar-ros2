@@ -57,13 +57,13 @@ ilidar_lite_core:
         topic_prefix: /ilidar_lite_front
         link_frame_id: ilidar_lite_front_link
         frame_id: ilidar_lite_front_optical_frame
-        mount_translation_x: 0.40
-        mount_translation_z: 0.21
+        mount_translation_x: 0.385
+        mount_translation_z: 0.211
 
       ilidar_lite_97:
         topic_prefix: /ilidar_lite_rear
         link_frame_id: ilidar_lite_rear_link
         frame_id: ilidar_lite_rear_optical_frame
-        mount_translation_x: -0.52
-        mount_translation_z: 0.21
+        mount_translation_x: -0.525
+        mount_translation_z: 0.211
         mount_rotation_yaw: 3.14159
