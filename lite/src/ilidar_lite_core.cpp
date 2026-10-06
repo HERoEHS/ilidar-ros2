@@ -167,6 +167,9 @@ struct DeviceSettings {
     std::string link_frame_id;
     std::string optical_frame_id;
     bool publish_tf = true;
+    // false: only link -> optical, when something else (the robot's URDF)
+    // publishes the mount base -> link.
+    bool publish_mount_tf = true;
     bool publish_depth = true;
     bool publish_amplitude = true;
     bool publish_intensity = true;
@@ -583,6 +586,8 @@ class LiteCoreNode : public rclcpp::Node {
         default_settings_.parent_frame_id =
             declare_immutable_parameter<std::string>("parent_frame_id", "base_link");
         default_settings_.publish_tf = declare_immutable_parameter<bool>("publish_tf", true);
+        default_settings_.publish_mount_tf =
+            declare_immutable_parameter<bool>("publish_mount_tf", true);
         default_settings_.publish_depth = declare_immutable_parameter<bool>("publish_depth", true);
         default_settings_.publish_amplitude = declare_immutable_parameter<bool>("publish_amplitude", true);
         default_settings_.publish_intensity = declare_immutable_parameter<bool>("publish_intensity", true);
@@ -695,6 +700,8 @@ class LiteCoreNode : public rclcpp::Node {
         settings.optical_frame_id = device_parameter(
             context, "frame_id", identity + "_optical_frame");
         settings.publish_tf = device_parameter(context, "publish_tf", default_settings_.publish_tf);
+        settings.publish_mount_tf = device_parameter(
+            context, "publish_mount_tf", default_settings_.publish_mount_tf);
         settings.publish_depth = device_parameter(
             context, "publish_depth", default_settings_.publish_depth);
         settings.publish_amplitude = device_parameter(
@@ -1898,19 +1905,22 @@ class LiteCoreNode : public rclcpp::Node {
         context.points_pub->publish(cloud);
     }
 
-    // Publish base->link and link->optical together on /tf_static.
+    // Publish base->link (unless publish_mount_tf is false) and link->optical
+    // together on /tf_static.
     void publish_static_tf(const DeviceContext &context) {
         const rclcpp::Time stamp = now();
         std::vector<geometry_msgs::msg::TransformStamped> transforms;
-        transforms.push_back(make_transform(stamp,
-                                            context.settings.parent_frame_id,
-                                            context.settings.link_frame_id,
-                                            context.settings.mount_translation_x,
-                                            context.settings.mount_translation_y,
-                                            context.settings.mount_translation_z,
-                                            context.settings.mount_rotation_roll,
-                                            context.settings.mount_rotation_pitch,
-                                            context.settings.mount_rotation_yaw));
+        if (context.settings.publish_mount_tf) {
+            transforms.push_back(make_transform(stamp,
+                                                context.settings.parent_frame_id,
+                                                context.settings.link_frame_id,
+                                                context.settings.mount_translation_x,
+                                                context.settings.mount_translation_y,
+                                                context.settings.mount_translation_z,
+                                                context.settings.mount_rotation_roll,
+                                                context.settings.mount_rotation_pitch,
+                                                context.settings.mount_rotation_yaw));
+        }
         transforms.push_back(make_transform(stamp,
                                             context.settings.link_frame_id,
                                             context.settings.optical_frame_id,

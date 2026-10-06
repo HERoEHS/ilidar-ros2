@@ -11,6 +11,12 @@ ilidar_lite_core:
     # long as the replacement reuses the address.
     parent_frame_id: base_link
     publish_tf: true
+    # ALICE M2 (2026-10-06): the mount base_link -> <link> comes from the robot
+    # URDF (alice_common m2_sensors.xacro + alice_parameters robot_N
+    # sensor_extrinsics.yaml, robot_state_publisher of the base launch), so this
+    # node publishes only <link> -> optical. Set true to run the sensors without
+    # the base launch; the mount_* values below are used only then.
+    publish_mount_tf: false
 
     # TODO(json@hybo.co): Measure the product mounting offset and update this
     # base_link -> ilidar_lite_link transform.
@@ -55,15 +61,15 @@ ilidar_lite_core:
     devices:
       ilidar_lite_99:
         topic_prefix: /ilidar_lite_front
-        link_frame_id: ilidar_lite_front_link
-        frame_id: ilidar_lite_front_optical_frame
+        link_frame_id: front_dtof_link  # the URDF link
+        frame_id: front_dtof_optical_frame
         mount_translation_x: 0.385
         mount_translation_z: 0.211
 
       ilidar_lite_97:
         topic_prefix: /ilidar_lite_rear
-        link_frame_id: ilidar_lite_rear_link
-        frame_id: ilidar_lite_rear_optical_frame
+        link_frame_id: rear_dtof_link  # the URDF link
+        frame_id: rear_dtof_optical_frame
         mount_translation_x: -0.525
         mount_translation_z: 0.211
         mount_rotation_yaw: 3.14159
