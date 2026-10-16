@@ -65,6 +65,7 @@ ilidar_lite_core:
         frame_id: front_dtof_optical_frame
         mount_translation_x: 0.385
         mount_translation_z: 0.211
+        mount_rotation_roll: 3.14159  # mounted upside down (2026-10-16)
 
       ilidar_lite_97:
         topic_prefix: /ilidar_lite_rear
@@ -72,4 +73,5 @@ ilidar_lite_core:
         frame_id: rear_dtof_optical_frame
         mount_translation_x: -0.525
         mount_translation_z: 0.211
+        mount_rotation_roll: 3.14159  # mounted upside down (2026-10-16)
         mount_rotation_yaw: 3.14159
